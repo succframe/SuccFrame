@@ -2,6 +2,8 @@
 
 A desktop companion app for [Warframe](https://www.warframe.com/) — live world state, item search, market price checking, relic planning, and riven grading, all in one window.
 
+Completely built with Claude AI.
+
 ## Features
 
 - **World State** — Live planetary cycle timers (Earth, Cetus, Orb Vallis, Cambion Drift, Zariman, Duviri), void fissures, invasions, sorties, Baro Ki'Teer, and more.
