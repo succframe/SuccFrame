@@ -1,6 +1,7 @@
 import httpx
 
 BASE = "https://api.warframe.market/v2"
+STATS_BASE = "https://api.warframe.market/v1"  # statistics endpoint is v1-only
 ASSET_BASE = "https://warframe.market/static/assets/"
 HEADERS = {
     "accept": "application/json",
@@ -133,6 +134,33 @@ def slug_for_name(name: str) -> str | None:
     if n in _name_to_slug_ci:
         return _name_to_slug_ci[n]
     return _name_to_slug_ci.get(f"{n} set")
+
+
+def get_statistics(slug: str) -> dict:
+    """Return the 90-day daily history for an item.
+
+    Shape: {"points": [{"date":"YYYY-MM-DD","avg":float,"min":float,"max":float,"volume":int}, ...]}
+    Sorted oldest -> newest. Empty list if no history.
+    """
+    with httpx.Client(timeout=TIMEOUT, headers=HEADERS) as client:
+        r = client.get(f"{STATS_BASE}/items/{slug}/statistics")
+        r.raise_for_status()
+        payload = r.json().get("payload", {})
+    raw = payload.get("statistics_closed", {}).get("90days", []) or []
+    points = []
+    for e in raw:
+        dt = (e.get("datetime") or "")[:10]
+        avg = e.get("avg_price")
+        if dt and avg is not None:
+            points.append({
+                "date": dt,
+                "avg": float(avg),
+                "min": float(e.get("min_price") or avg),
+                "max": float(e.get("max_price") or avg),
+                "volume": int(e.get("volume") or 0),
+            })
+    points.sort(key=lambda p: p["date"])
+    return {"points": points}
 
 
 def price_summary(name: str) -> dict | None:

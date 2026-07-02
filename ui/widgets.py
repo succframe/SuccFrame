@@ -1,6 +1,9 @@
 """Reusable dashboard components shared across tabs."""
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMenu, QLineEdit,
+    QComboBox
+)
+from PyQt6.QtCore import Qt, QEvent, QObject
 from PyQt6.QtGui import QFont
 from ui import theme as T
 
@@ -121,3 +124,141 @@ def hline() -> QFrame:
     f.setFixedHeight(1)
     f.setStyleSheet(f"background:{T.BORDER}; border:none;")
     return f
+
+
+def star_button(active: bool = False) -> QPushButton:
+    """A toggleable star button. Toggle state with `.set_active(bool)`.
+
+    Not `setCheckable` on purpose — the caller owns the truth (settings.json),
+    the widget just reflects it, so we avoid Qt's internal state drifting.
+    """
+    btn = QPushButton("★")
+    btn.setFixedSize(36, 36)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setToolTip("Toggle favorite")
+    _style_star(btn, active)
+    def _set_active(a: bool):
+        _style_star(btn, a)
+    btn.set_active = _set_active   # type: ignore[attr-defined]
+    return btn
+
+
+def _style_star(btn: QPushButton, active: bool):
+    color = T.GOLD if active else T.MUTED
+    hover = T.GOLD if active else T.ACCENT
+    btn.setStyleSheet(
+        f"QPushButton {{ background:transparent; color:{color}; border:1px solid {T.BORDER}; "
+        f"border-radius:8px; font-size:18px; padding:0; }}"
+        f"QPushButton:hover {{ color:{hover}; border-color:{hover}; }}")
+
+
+def _cycle_completer_popup(completer, direction: int):
+    """Move popup selection by `direction` (+1 = down, -1 = up), wrapping."""
+    popup = completer.popup()
+    model = popup.model()
+    n = model.rowCount()
+    if n == 0:
+        return
+    current = popup.currentIndex()
+    row = current.row() if current.isValid() else (-1 if direction > 0 else 0)
+    row = (row + direction) % n
+    popup.setCurrentIndex(model.index(row, 0))
+
+
+class SearchLineEdit(QLineEdit):
+    """QLineEdit whose Tab / Shift+Tab cycle through the completer popup while
+    it's visible. Falls back to normal focus navigation otherwise.
+
+    Overriding `event()` (not `keyPressEvent`) is required because Qt handles
+    Tab-for-focus inside `event()` before `keyPressEvent` is ever called.
+    """
+    def event(self, e):
+        if e.type() == QEvent.Type.KeyPress:
+            c = self.completer()
+            if c is not None and c.popup().isVisible():
+                key = e.key()
+                if key == Qt.Key.Key_Tab:
+                    _cycle_completer_popup(c, 1)
+                    return True
+                if key == Qt.Key.Key_Backtab:  # Shift+Tab
+                    _cycle_completer_popup(c, -1)
+                    return True
+        return super().event(e)
+
+
+class SearchComboBox(QComboBox):
+    """Editable QComboBox whose Tab / Shift+Tab cycle through the completer
+    popup. Same trick as SearchLineEdit but at the combo level so the internal
+    line edit doesn't need to be replaced (replacing it disturbs the combo's
+    rendering).
+    """
+    def event(self, e):
+        if e.type() == QEvent.Type.KeyPress:
+            c = self.completer()
+            if c is not None and c.popup().isVisible():
+                key = e.key()
+                if key == Qt.Key.Key_Tab:
+                    _cycle_completer_popup(c, 1)
+                    return True
+                if key == Qt.Key.Key_Backtab:
+                    _cycle_completer_popup(c, -1)
+                    return True
+        return super().event(e)
+
+
+class _TabCyclesCompleter(QObject):
+    """Event filter for a QLineEdit (including a QComboBox's own line edit):
+    while its completer popup is visible, Tab / Shift+Tab cycle the suggestions.
+
+    Used where we can't swap in `SearchLineEdit` — e.g. a QComboBox owns its
+    line edit and replacing it disturbs the combo's rendering.
+    """
+    def eventFilter(self, obj, e):
+        if e.type() == QEvent.Type.KeyPress:
+            get = getattr(obj, "completer", None)
+            c = get() if get else None
+            if c is not None and c.popup().isVisible():
+                key = e.key()
+                if key == Qt.Key.Key_Tab:
+                    _cycle_completer_popup(c, 1)
+                    return True
+                if key == Qt.Key.Key_Backtab:  # Shift+Tab
+                    _cycle_completer_popup(c, -1)
+                    return True
+        return False
+
+
+def install_tab_cycles_completer(line_edit):
+    """Attach Tab-cycling to a line edit without replacing it. The filter is
+    parented to the line edit so it lives as long as the widget."""
+    filt = _TabCyclesCompleter(line_edit)
+    line_edit.installEventFilter(filt)
+    return filt
+
+
+def favorites_menu_button(get_favorites, on_pick) -> QPushButton:
+    """A button that pops a menu of favorites, calls on_pick(name) when clicked.
+
+    One QMenu is created and reused; its actions are cleared and repopulated
+    just before it opens so the list always reflects the current saved set.
+    """
+    btn = QPushButton("Favorites ▾")
+    btn.setFixedHeight(36)
+    btn.setToolTip("Your saved favorites")
+    menu = QMenu(btn)
+    btn.setMenu(menu)
+    def _rebuild():
+        menu.clear()
+        favs = get_favorites()
+        if not favs:
+            act = menu.addAction("(no favorites yet)")
+            act.setEnabled(False)
+        else:
+            for name in favs:
+                menu.addAction(name, lambda n=name: on_pick(n))
+    _rebuild()
+    # Both signals fire before the menu opens; either alone would work, but
+    # connecting both guards against edge cases where Qt suppresses aboutToShow.
+    menu.aboutToShow.connect(_rebuild)
+    btn.pressed.connect(_rebuild)
+    return btn

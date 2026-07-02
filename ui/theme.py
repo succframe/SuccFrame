@@ -46,11 +46,13 @@ QMainWindow, QWidget {{ background-color: {BG}; }}
 
 QTabWidget::pane {{ border: none; background: {BG}; }}
 QTabBar {{ qproperty-drawBase: 0; }}
-QTabBar::tab {{ background: transparent; color: {MUTED}; padding: 10px 20px; margin-right: 4px;
-    border: none; border-bottom: 2px solid transparent; font-weight: 600; font-size: 13px; }}
-QTabBar::tab:hover {{ color: {TEXT}; }}
-QTabBar::tab:selected {{ color: {TEXT}; border-bottom: 2px solid {ACCENT};
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:1 {_rgba(ACCENT, 0.10)}); }}
+QTabBar::tab {{ background: {SURFACE}; color: {MUTED};
+    padding: 8px 18px; margin: 2px 4px 2px 0;
+    border: 1px solid {BORDER}; border-radius: 10px;
+    font-weight: 600; font-size: 13px; }}
+QTabBar::tab:hover {{ color: {TEXT}; border-color: {ACCENT}; }}
+QTabBar::tab:selected {{ color: {TEXT}; background: {_rgba(ACCENT, 0.15)};
+    border: 1px solid {ACCENT}; }}
 
 QPushButton {{ background-color: {SURFACE_2}; color: {TEXT}; border: 1px solid {BORDER};
     border-radius: 8px; padding: 8px 15px; font-weight: 600; }}

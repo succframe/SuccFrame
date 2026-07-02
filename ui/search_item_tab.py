@@ -1,15 +1,19 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QScrollArea, QFrame, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView
+    QHeaderView, QAbstractItemView, QCompleter
 )
 import webbrowser
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QStringListModel
 from PyQt6.QtGui import QFont, QColor, QPixmap
 import core.items_api as items_api
 import core.market_api as market
 import core.images as images
+from core import settings
+from ui import widgets as W
 from ui import theme as T
+
+FAV_KIND = "search"
 
 
 def _wiki_url(name: str) -> str:
@@ -34,6 +38,17 @@ class SearchThread(QThread):
             self.done.emit(items_api.search(self.query))
         except Exception as e:
             self.error.emit(str(e))
+
+
+class NamesLoader(QThread):
+    """Load the market's item catalog to feed the autocomplete."""
+    done = pyqtSignal(list)
+    def run(self):
+        try:
+            names = sorted({it["name"] for it in market.get_all_items()})
+            self.done.emit(names)
+        except Exception:
+            self.done.emit([])
 
 
 class PriceThread(QThread):
@@ -75,10 +90,12 @@ class SearchItemTab(QWidget):
         self._results = []
         self._search_thread = None
         self._price_thread = None
+        self._names_thread = None
         self._img_loader = None
         self._drop_img_loaders = []
         self._drop_icons_by_name = {}
         self._build_ui()
+        self._load_names()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -88,16 +105,24 @@ class SearchItemTab(QWidget):
         root.addWidget(_bold("Search Item", 13))
 
         bar = QHBoxLayout()
-        self._search = QLineEdit()
+        self._search = W.SearchLineEdit()
         self._search.setPlaceholderText("Search any item — weapon, warframe, mod, prime part, set…")
         self._search.returnPressed.connect(self._do_search)
         self._btn = QPushButton("Search")
         self._btn.setObjectName("primary")
         self._btn.setFixedWidth(90)
         self._btn.clicked.connect(self._do_search)
+        self._star = W.star_button(False)
+        self._star.setEnabled(False)
+        self._star.clicked.connect(self._toggle_favorite)
+        self._favs_btn = W.favorites_menu_button(
+            lambda: settings.get_favorites(FAV_KIND), self._open_favorite)
         bar.addWidget(self._search)
         bar.addWidget(self._btn)
+        bar.addWidget(self._star)
+        bar.addWidget(self._favs_btn)
         root.addLayout(bar)
+        self._current_name = ""
 
         self._picker = QComboBox()
         self._picker.setVisible(False)
@@ -168,8 +193,47 @@ class SearchItemTab(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
+    def _load_names(self):
+        self._names_thread = NamesLoader()
+        self._names_thread.done.connect(self._on_names)
+        self._names_thread.start()
+
+    def _on_names(self, names):
+        if not names:
+            return
+        # Store both model AND completer on self so the Python objects aren't
+        # garbage-collected out from under Qt while the widget is alive.
+        self._names_model = QStringListModel(names, self)
+        self._names_completer = QCompleter(self._names_model, self)
+        self._names_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._names_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._names_completer.setMaxVisibleItems(12)
+        # Picking a suggestion instantly runs the search.
+        self._names_completer.activated.connect(
+            lambda t: (self._search.setText(t), self._do_search()))
+        self._search.setCompleter(self._names_completer)
+
+    def _toggle_favorite(self):
+        name = self._current_name
+        if not name:
+            return
+        if settings.is_favorite(FAV_KIND, name):
+            settings.remove_favorite(FAV_KIND, name)
+            self._star.set_active(False)
+        else:
+            settings.add_favorite(FAV_KIND, name)
+            self._star.set_active(True)
+
+    def _open_favorite(self, name: str):
+        self._search.setText(name)
+        self._do_search()
+
     def _render(self, item: dict):
         self._clear_detail()
+        self._current_name = item.get("name", "")
+        self._star.setEnabled(bool(self._current_name))
+        self._star.set_active(
+            bool(self._current_name) and settings.is_favorite(FAV_KIND, self._current_name))
 
         # Header
         header = QHBoxLayout()

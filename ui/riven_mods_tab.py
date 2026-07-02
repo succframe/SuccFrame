@@ -97,7 +97,7 @@ class RivenModsTab(QWidget):
             self._pending = state["pending"]
             self._user_pos = state.get("user_pos", [])
             self._user_neg = state.get("user_neg")
-            if self._pending and self._user_pos:
+            if self._pending and (self._user_pos or self._user_neg):
                 w = self._weapon_by_name.get(self._weapon.currentText())
                 if w:
                     self._load_auctions(w["slug"])
@@ -118,7 +118,7 @@ class RivenModsTab(QWidget):
         inp = W.card()
         inp.setFixedWidth(340)
         inp.body.addWidget(W.header("Your Riven"))
-        self._weapon = QComboBox()
+        self._weapon = W.SearchComboBox()
         self._weapon.setEditable(True); self._weapon.setEnabled(False)
         self._weapon.currentIndexChanged.connect(self._on_weapon)
         inp.body.addWidget(self._weapon)

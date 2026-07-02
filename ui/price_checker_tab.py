@@ -7,8 +7,20 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QStringListModel, QSize
 from PyQt6.QtGui import QColor, QPixmap, QIcon
 import core.market_api as api
 import core.images as images
+from core import settings
 from ui import widgets as W
 from ui import theme as T
+from ui.charts import PriceHistoryChart
+
+FAV_KIND = "price"
+
+
+class StatsLoader(QThread):
+    done = pyqtSignal(dict); error = pyqtSignal(str)
+    def __init__(self, slug): super().__init__(); self.slug = slug
+    def run(self):
+        try: self.done.emit(api.get_statistics(self.slug))
+        except Exception as e: self.error.emit(str(e))
 
 STATUS_ORDER = {"ingame": 0, "online": 1, "offline": 2}
 STATUS_COLOR = {"ingame": T.GREEN, "online": T.GOLD, "offline": T.MUTED}
@@ -42,6 +54,7 @@ class PriceCheckerTab(QWidget):
         super().__init__()
         self._name_to_slug = {}
         self._orders_thread = self._items_thread = self._detail_thread = None
+        self._stats_thread = None
         self._orders = []
         self._img_loaders = []
         self._member_btns = {}
@@ -63,7 +76,7 @@ class PriceCheckerTab(QWidget):
         root.addWidget(W.title("Price Checker", 15))
 
         bar = QHBoxLayout()
-        self._search = QLineEdit()
+        self._search = W.SearchLineEdit()
         self._search.setPlaceholderText("Loading item list…")
         self._search.setEnabled(False)
         self._search.returnPressed.connect(self._on_search)
@@ -71,8 +84,15 @@ class PriceCheckerTab(QWidget):
         self._btn.setObjectName("primary")
         self._btn.setFixedWidth(100)
         self._btn.clicked.connect(self._on_search)
+        self._star = W.star_button(False)
+        self._star.setEnabled(False)
+        self._star.clicked.connect(self._toggle_favorite)
+        self._favs_btn = W.favorites_menu_button(
+            lambda: settings.get_favorites(FAV_KIND), self.search_for)
         bar.addWidget(self._search)
         bar.addWidget(self._btn)
+        bar.addWidget(self._star)
+        bar.addWidget(self._favs_btn)
         root.addLayout(bar)
 
         self._status = W.muted("")
@@ -131,6 +151,35 @@ class PriceCheckerTab(QWidget):
 
         root.addLayout(cols, 1)
 
+        # Price history chart
+        self._chart_card = W.card()
+        header_row = QHBoxLayout()
+        header_row.addWidget(W.header("Price History — 90 days"))
+        header_row.addStretch()
+        self._trend_lbl = W.muted("")
+        header_row.addWidget(self._trend_lbl)
+        self._chart_card.body.addLayout(header_row)
+        self._chart = PriceHistoryChart()
+        self._chart_card.body.addWidget(self._chart)
+        self._chart_card.hide()
+        root.addWidget(self._chart_card)
+
+    def _toggle_favorite(self):
+        name = self._current_item_name
+        if not name:
+            return
+        if settings.is_favorite(FAV_KIND, name):
+            settings.remove_favorite(FAV_KIND, name)
+            self._star.set_active(False)
+        else:
+            settings.add_favorite(FAV_KIND, name)
+            self._star.set_active(True)
+
+    def _refresh_star(self):
+        name = self._current_item_name
+        self._star.setEnabled(bool(name))
+        self._star.set_active(bool(name) and settings.is_favorite(FAV_KIND, name))
+
     def _set_side(self, sell):
         self._side_sell = sell
         self._sell_btn.setChecked(sell)
@@ -158,7 +207,7 @@ class PriceCheckerTab(QWidget):
                 col, asc = self._sort
                 self._on_sort(col, asc)
             self._detail_thread = DetailLoader(slug)
-            self._detail_thread.done.connect(self._on_detail)
+            self._detail_thread.done.connect(lambda d, s=slug: self._on_detail(s, d))
             self._detail_thread.start()
 
     # ── items / autocomplete ─────────────────────────────────────────────
@@ -207,19 +256,45 @@ class PriceCheckerTab(QWidget):
         self._search_slug(slug, display)
 
     def _search_slug(self, slug, display):
-        if self._orders_thread and self._orders_thread.isRunning():
-            return
+        # No isRunning guard: the user should always be able to switch items.
+        # Stale callbacks are filtered by comparing their slug to _active_slug.
         self._active_slug = slug
         self._current_item_name = display
         self._status.setText(f"Loading {display}…")
         self._btn.setEnabled(False)
         self._orders_thread = OrdersLoader(slug)
-        self._orders_thread.done.connect(self._on_orders)
+        self._orders_thread.done.connect(lambda orders, s=slug: self._on_orders(s, orders))
         self._orders_thread.error.connect(self._on_error)
         self._orders_thread.start()
         self._detail_thread = DetailLoader(slug)
-        self._detail_thread.done.connect(self._on_detail)
+        self._detail_thread.done.connect(lambda d, s=slug: self._on_detail(s, d))
         self._detail_thread.start()
+        self._load_stats(slug)
+
+    def _load_stats(self, slug):
+        self._chart_card.show()
+        self._chart.set_points([])
+        self._trend_lbl.setText("loading history…")
+        self._stats_thread = StatsLoader(slug)
+        self._stats_thread.done.connect(lambda data, s=slug: self._on_stats(s, data))
+        self._stats_thread.error.connect(lambda _: self._trend_lbl.setText(""))
+        self._stats_thread.start()
+
+    def _on_stats(self, slug, data):
+        if slug != self._active_slug:
+            return  # stale response from a previous item
+        points = data.get("points", [])
+        self._chart.set_points(points)
+        if len(points) < 2:
+            self._trend_lbl.setText("")
+            return
+        first, last = points[0]["avg"], points[-1]["avg"]
+        pct = (last - first) / first * 100 if first else 0
+        arrow = "▲" if pct >= 0 else "▼"
+        color = T.GREEN if pct >= 0 else T.RED
+        # inline color via stylesheet
+        self._trend_lbl.setText(f"{arrow} {abs(pct):.1f}% (avg {int(last)}p vs {int(first)}p)")
+        self._trend_lbl.setStyleSheet(f"color:{color}; font-weight:600; background:transparent;")
 
     def _go_to_set(self):
         if self._set_slug and self._set_slug != self._active_slug:
@@ -230,7 +305,9 @@ class PriceCheckerTab(QWidget):
         self._status.setText(f"Error: {msg}")
 
     # ── showcase (left) ──────────────────────────────────────────────────
-    def _on_detail(self, d):
+    def _on_detail(self, slug, d):
+        if slug != self._active_slug:
+            return  # stale response from a previous item
         self._img_loaders = []
         self._member_btns = {}
         while self._showcase_body.count():
@@ -242,6 +319,7 @@ class PriceCheckerTab(QWidget):
 
         self._current_ducats = d.get("ducats")
         self._rebuild_table()
+        self._refresh_star()
         members = d.get("members", [])
         set_m = next((m for m in members if m["is_set"]), None)
         self._set_slug = set_m["slug"] if set_m else d["slug"]
@@ -338,7 +416,9 @@ class PriceCheckerTab(QWidget):
                 self._clear_layout(it.layout())
 
     # ── order book (right) ───────────────────────────────────────────────
-    def _on_orders(self, orders):
+    def _on_orders(self, slug, orders):
+        if slug != self._active_slug:
+            return  # stale response from a previous item
         self._btn.setEnabled(True)
         self._orders = orders
         self._rebuild_table()

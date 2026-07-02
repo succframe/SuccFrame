@@ -26,11 +26,18 @@ CHECKS = [
      "url": "https://drops.warframestat.us/data/relics.json", "range": True},
     {"name": "Riven Math Data (calamity-inc)", "tab": "Riven Mods",
      "url": "https://calamity-inc.github.io/warframe-riven-info/RivenParser.js"},
+    {"name": "Market — Price History", "tab": "Price Checker",
+     "url": "https://api.warframe.market/v1/items/mesa_prime_set/statistics",
+     "headers": {"Platform": "pc", "Language": "en"}},
     {"name": "Item Images (market CDN)", "tab": "Price Checker / Relic Planner",
      "url": "https://warframe.market/static/assets/items/images/en/thumbs/"
             "mesa_prime_set.34d67af54de052f6de1d5ae64ed40197.128x128.png"},
     {"name": "Fallback Images (warframestat CDN)", "tab": "Relic Planner",
      "url": "https://cdn.warframestat.us/img/Forma.png"},
+    {"name": "Overframe Sitemap (build IDs)", "tab": "Builds",
+     "url": "https://overframe.gg/sitemap.xml",
+     "headers": {"User-Agent": "Googlebot/2.1 (+http://www.google.com/bot.html)"},
+     "range": True},
 ]
 
 

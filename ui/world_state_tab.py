@@ -111,7 +111,7 @@ class WorldStateTab(QWidget):
 
         content = QWidget()
         v = QVBoxLayout(content)
-        v.setContentsMargins(0, 0, 0, 0)
+        v.setContentsMargins(0, 0, 12, 0)
         v.setSpacing(14)
         v.setAlignment(Qt.AlignmentFlag.AlignTop)
 

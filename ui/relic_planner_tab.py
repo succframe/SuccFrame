@@ -64,7 +64,7 @@ class RelicPlannerTab(QWidget):
         root.addWidget(title)
 
         bar = QHBoxLayout()
-        self._search = QLineEdit()
+        self._search = W.SearchLineEdit()
         self._search.setPlaceholderText("Loading relics...")
         self._search.setEnabled(False)
         self._search.returnPressed.connect(self._show_relic)
@@ -124,9 +124,13 @@ class RelicPlannerTab(QWidget):
         if search_text:
             self._search.setText(search_text)
         refine_state = state.get("refine_state", "Radiant")
+        # Block signals so setCurrentIndex doesn't emit currentIndexChanged, which
+        # would fire _show_relic in addition to the explicit call below.
+        self._refine.blockSignals(True)
         idx = self._refine.findText(refine_state)
         if idx >= 0:
             self._refine.setCurrentIndex(idx)
+        self._refine.blockSignals(False)
         if search_text:
             self._show_relic()
 

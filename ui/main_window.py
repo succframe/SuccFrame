@@ -8,6 +8,7 @@ from ui.price_checker_tab import PriceCheckerTab
 from ui.relic_planner_tab import RelicPlannerTab
 from ui.search_item_tab import SearchItemTab
 from ui.riven_mods_tab import RivenModsTab
+from ui.builds_tab import BuildsTab
 from ui.health_dialog import HealthDialog
 from ui.settings_dialog import SettingsDialog
 from ui import theme
@@ -27,6 +28,7 @@ class MainWindow(QMainWindow):
         self._riven_state = None
         self._price_checker_state = None
         self._relic_planner_state = None
+        self._builds_state = None
         self._add_tabs()
         self._build_corner()
 
@@ -46,6 +48,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.relic_planner, "Relic Planner")
         self.riven_mods = RivenModsTab(_restore_state=self._riven_state)
         self.tabs.addTab(self.riven_mods, "Riven Mods")
+        self.builds = BuildsTab(_restore_state=self._builds_state)
+        self.tabs.addTab(self.builds, "Builds")
 
     def _build_corner(self):
         corner = QWidget()
@@ -100,6 +104,8 @@ class MainWindow(QMainWindow):
             self._price_checker_state = self.price_checker._save_state()
         if hasattr(self, 'relic_planner'):
             self._relic_planner_state = self.relic_planner._save_state()
+        if hasattr(self, 'builds'):
+            self._builds_state = self.builds._save_state()
         while self.tabs.count():
             w = self.tabs.widget(0)
             self.tabs.removeTab(0)

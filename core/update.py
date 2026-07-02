@@ -1,7 +1,7 @@
 """App version and GitHub release update check."""
 import httpx
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 GITHUB_REPO = "succframe/SuccFrame"
 

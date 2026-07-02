@@ -50,3 +50,30 @@ def set_last_tab(index: int):
     data = _load()
     data["last_tab"] = int(index)
     _save(data)
+
+
+# ── favorites ────────────────────────────────────────────────────────────
+# 'kind' scopes favorites per tab, e.g. "search" and "price".
+
+def get_favorites(kind: str) -> list[str]:
+    return list(_load().get("favorites", {}).get(kind, []))
+
+
+def add_favorite(kind: str, name: str):
+    data = _load()
+    favs = data.setdefault("favorites", {}).setdefault(kind, [])
+    if name and name not in favs:
+        favs.append(name)
+        _save(data)
+
+
+def remove_favorite(kind: str, name: str):
+    data = _load()
+    favs = data.get("favorites", {}).get(kind, [])
+    if name in favs:
+        favs.remove(name)
+        _save(data)
+
+
+def is_favorite(kind: str, name: str) -> bool:
+    return name in _load().get("favorites", {}).get(kind, [])
